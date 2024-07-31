@@ -6,23 +6,19 @@ from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
 from langchain.chains import create_retrieval_chain
 from langchain_community.vectorstores import FAISS
-from langchain_community.document_loaders import PyPDFDirectoryLoader
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from dotenv import load_dotenv
-import os
+import json
+
 load_dotenv()
 
+# Load the GROQ And OpenAI API KEY 
+groq_api_key = "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"
+GOOGLE_API_KEY = "AIzaSyCIsJ2CuMm-6-v2k6raO8wnRpi2we_wA4A"
 
-## load the GROQ And OpenAI API KEY 
-groq_api_key="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"
-GOOGLE_API_KEY="AIzaSyCIsJ2CuMm-6-v2k6raO8wnRpi2we_wA4A"
+llm = ChatGroq(groq_api_key=groq_api_key, model_name="Llama3-8b-8192")
 
-llm=ChatGroq(groq_api_key=groq_api_key,
-             model_name="Llama3-8b-8192")
-
-
-
-prompt=ChatPromptTemplate.from_template("""
+prompt = ChatPromptTemplate.from_template("""
     Context:
     {context}
  
@@ -51,21 +47,47 @@ prompt=ChatPromptTemplate.from_template("""
     {input}"""
 )
 
+def load_json_files(directory_path):
+    """Load JSON files from a directory."""
+    documents = []
+    for filename in os.listdir(directory_path):
+        if filename.endswith(".json"):
+            with open(os.path.join(directory_path, filename), 'r') as file:
+                documents.append(json.load(file))
+    return documents
+
 def vector_embedding():
-
     if "vectors" not in st.session_state:
+        # Initialize embeddings
+        st.session_state.embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+        
+        # Load JSON documents
+        st.session_state.docs = load_json_files("C:/Users/Arvi/Downloads/resume-main/")  # Specify your directory containing JSON files
+        if not st.session_state.docs:
+            st.error("No JSON documents found. Please check the directory path.")
+            return
+        
+        # Extract text from JSON documents
+        all_texts = [json.dumps(doc) for doc in st.session_state.docs]  # Adjust as needed to extract specific fields
+        if not all_texts:
+            st.error("No text extracted from JSON documents. Please check the JSON structure.")
+            return
+        
+        # Document loading and splitting
+        st.session_state.text_splitter = RecursiveCharacterTextSplitter(chunk_size=25, chunk_overlap=25)
+        st.session_state.final_documents = st.session_state.text_splitter.create_documents(all_texts[:10])
+        if not st.session_state.final_documents:
+            st.error("No document chunks created. Please check the text splitting configuration.")
+            return
+        
+        # Create vector embeddings
+        try:
+            st.session_state.vectors = FAISS.from_documents(st.session_state.final_documents, st.session_state.embeddings)
+        except Exception as e:
+            st.error(f"Error creating vector embeddings: {str(e)}")
+            return
 
-        st.session_state.embeddings=GoogleGenerativeAIEmbeddings(model = "models/embedding-001")
-        #st.session_state.loader=PyPDFDirectoryLoader("./resume") ## Data Ingestion
-        st.session_state.loader=PyPDFDirectoryLoader("./resume") ## Data Ingestion
-        st.session_state.docs=st.session_state.loader.load() ## Document Loading
-        st.session_state.text_splitter=RecursiveCharacterTextSplitter(chunk_size=25,chunk_overlap=25) ## Chunk Creation
-        st.session_state.final_documents=st.session_state.text_splitter.split_documents(st.session_state.docs[:10]) #splitting
-        st.session_state.vectors=FAISS.from_documents(st.session_state.final_documents,st.session_state.embeddings) #vector OpenAI embeddings
-
-
-prompt1=st.text_input("Enter Your Question From Doduments")
-
+prompt1 = st.text_input("Enter Your Question From Documents")
 
 if st.button("Documents Embedding"):
     vector_embedding()
@@ -74,17 +96,20 @@ if st.button("Documents Embedding"):
 import time
 
 if prompt1:
-    document_chain=create_stuff_documents_chain(llm,prompt)
-    retriever=st.session_state.vectors.as_retriever()
-    retrieval_chain=create_retrieval_chain(retriever,document_chain)
-    start=time.process_time()
-    response=retrieval_chain.invoke({'input':prompt1})
-    print("Response time :",time.process_time()-start)
-    st.write(response['answer'])
+    try:
+        document_chain = create_stuff_documents_chain(llm, prompt)
+        retriever = st.session_state.vectors.as_retriever()
+        retrieval_chain = create_retrieval_chain(retriever, document_chain)
+        start = time.process_time()
+        response = retrieval_chain.invoke({'input': prompt1})
+        st.write("Response time :", time.process_time() - start)
+        st.write(response['answer'])
 
-    # With a streamlit expander
-    with st.expander("Document Similarity Search"):
-        # Find the relevant chunks
-        for i, doc in enumerate(response["context"]):
-            st.write(doc.page_content)
-            st.write("--------------------------------")
+        # With a streamlit expander
+        with st.expander("Document Similarity Search"):
+            # Find the relevant chunks
+            for i, doc in enumerate(response["context"]):
+                st.write(doc.page_content)
+                st.write("--------------------------------")
+    except Exception as e:
+        st.error(f"An error occurred during retrieval: {str(e)}")
