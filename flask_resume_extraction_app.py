@@ -58,7 +58,10 @@ class ResumeProcessor:
                     text = self.extract_text_from_resume(file_path)
                     resumes_text[os.path.basename(file_path)] = text
 
-        return self.extract_information(resumes_text)
+        extracted_data = self.extract_information(resumes_text)
+        self.save_to_json(extracted_data, 'extracted_data.json')
+        self.save_to_csv(extracted_data, 'extracted_data.csv')
+        return extracted_data
 
     def allowed_file(self, filename):
         return '.' in filename and filename.rsplit('.', 1)[1].lower() in self.allowed_extensions
@@ -107,6 +110,21 @@ class ResumeProcessor:
                 print(f"Failed to parse JSON: {e}")
         
         return extracted_data
+
+    def save_to_json(self, data, json_path):
+        """Save extracted data to a JSON file."""
+        with open(json_path, 'w', encoding='utf-8') as json_file:
+            json.dump(data, json_file, ensure_ascii=False, indent=4)
+        print(f"Extracted data saved to {json_path}")
+
+    def save_to_csv(self, data, csv_path):
+        """Save extracted data to a CSV file."""
+        if data:
+            df = pd.DataFrame(data)
+            df.to_csv(csv_path, index=False, encoding='utf-8')
+            print(f"Extracted data saved to {csv_path}")
+        else:
+            print("No data available to save.")
 
 app = Flask(__name__)
 app.config['GROQ_API_KEY'] = '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'
