@@ -68,28 +68,33 @@ class ResumeProcessor:
 
     def extract_information(self, resumes_text):
         extracted_data = []
+        client = Groq(api_key=self.groq_api_key)
+
         for filename, text in resumes_text.items():
             prompt_template = f'''
-            You are an AI bot designed to act as a professional for parsing resumes. 
-            You are given with resume and your job is to extract the following information from the resume {text} in json just that dont give additional text in the begining and end just this info: 
+            You are an AI bot designed to extract information from resumes. 
+            Please extract the following information from this resume: 
             1. Full_Name
+            2. Year_of_Experience
             2. Address
-            2. Email_ID
-            3. Contact_Number
-            3. Employment_Details
-            4. Industry_sector
-            5. Technical_Skills
-            6. Education_Degree
-            7. College_Name
-            8. Profile_Summary
-            9. Project_Summary
-            10. Certifications
-            Give the extracted information in json format only. Provide null if information not available in the resume.
-            and this is resume {text} and dont add additional text in begining and end just extract json and give complete information and dont include
-            Here is the extracted information in json format from resume details above provided:
+            3. Email_ID
+            4. Contact_Number
+            5. Employment_Details
+            6. Industry_sector
+            7. Technical_Skills
+            8. Education_Degree
+            9. College_Name
+            10. Profile_Summary
+            11. Project_Summary
+            12. Certifications
+            
+            Resume text:
+            {text}
+            
+            Provide the extracted information in JSON format only. If any information is not available, include `null` for that field.
+            don't provide any notes or explaination on your assumptions
+            Industry_sector is not directly mentioned in resume, use your knowlage and decide it
             '''
-
-            client = Groq(api_key=self.groq_api_key)
 
             chat_completion = client.chat.completions.create(
                 messages=[
@@ -103,11 +108,16 @@ class ResumeProcessor:
             )
 
             response_content = chat_completion.choices[0].message.content
+            
+            # Debugging step: Print the raw response content
+            print(f"Raw API response for file '{filename}': {response_content}")
+            
             try:
                 data = json.loads(response_content.strip())
                 extracted_data.append(data)
             except json.JSONDecodeError as e:
                 print(f"Failed to parse JSON: {e}")
+                print(f"Response content: {response_content}")
         
         return extracted_data
 

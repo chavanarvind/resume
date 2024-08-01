@@ -1,7 +1,7 @@
-from flask import Flask, request, jsonify
 import os
-import docx
 import pandas as pd
+from flask import Flask, request, jsonify
+import docx
 from io import BytesIO
 from langchain_groq import ChatGroq
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -29,29 +29,40 @@ prompt = ChatPromptTemplate.from_template("""
     Context:
     {context}
 
-    You are HRBot, an assistant to HR and expert in talent acquisition.
+    You are HRBot, an assistant to HR and an expert in talent acquisition.
 
-    Task: As a helpful and polite HRBot, select the top 3 candidates for the job based on the provided resumes and questions asked. Compulsory follow the instructions.
+    Task: Based on the provided resumes, select and rank the top 10 candidates for the job. Follow the instructions below:
 
     Instructions:
-    Accurately and contextually refer to the provided context.
-    Think step-by-step and provide facts and references to sources in the response.
-    Answer questions concisely and relevantly and try to keep answers less than a paragraph.
-    Evaluate candidates based on relevant work experience, matching skills, education, and other relevant factors.
-    Rank the candidates from 1 to 3, with 1 being the best match.
-    Provide a brief justification for selecting and ranking each candidate.
-    If unsure or lacking information, respond with "I don't require profiles", do not hallucinate or make up information not in the context.
-    Do not give duplicate answers and identify candidates by their name.
-    matching score shoud be in percentage 
-    Provide the output in the following format only:
+    1. Refer accurately and contextually to the provided context.
+    2. Provide step-by-step reasoning and cite specific facts and references from the context.
+    3. Answer questions concisely and relevantly. Keep responses brief, ideally under a paragraph.
+    4. Evaluate candidates based on:
+       - Relevant work experience
+       - Matching skills
+       - Educational background
+       - Any other pertinent factors
+    5. Rank the candidates from 1 to 10, with 1 being the best match.
+    6. For each candidate, provide:
+       - Full Name
+       - Years of Experience
+       - Key Skills
+       - Experience Details and Industry Sector
+       - College Tier
+       - Justification for Ranking
+       - Matching Score (in percentage)
+    7. If you lack sufficient information or are unsure, respond with "I don't require profiles." Avoid making assumptions or hallucinating information.
+    8. Do not repeat answers. Clearly identify each candidate by their name.
+
+    Output Format:
     1. Rank
     2. Full_Name
-    3. Years of experience
-    4. Key skills
-    5. Experience details and industry sector
-    6. College tier
-    7. Justification of shortlisting
-    8. Matching score
+    3. Years of Experience
+    4. Key Skills
+    5. Experience Details and Industry Sector
+    6. College/Tier
+    7. Justification for Shortlisting
+    8. Matching Score (percentage)
 
     Question:
     {input}"""
@@ -64,22 +75,38 @@ def load_text_from_docx(file):
     text = '\n'.join(paragraph.text for paragraph in doc.paragraphs)
     return text
 
+def remove_columns_from_csv(file_path, columns_to_remove):
+    """Removes specified columns from a CSV file."""
+    try:
+        df = pd.read_csv(file_path)
+        df = df.drop(columns=columns_to_remove, errors='ignore')  # `errors='ignore'` ensures no error if column not found
+        df.to_csv(file_path, index=False)
+    except FileNotFoundError:
+        print(f"Error: The file {file_path} was not found.")
+    except pd.errors.EmptyDataError:
+        print("Error: The file is empty.")
+    except pd.errors.ParserError:
+        print("Error: The file could not be parsed.")
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+
 def prepare_context_from_csv(directory_path):
-    """Read CSV files and prepare context."""
+    """Read CSV files, remove specified columns, and prepare context."""
     all_context = []
+    columns_to_remove = ['Address', 'Email_ID', 'Contact_Number']
+    
     for filename in os.listdir(directory_path):
         if filename.endswith(".csv"):
             csv_path = os.path.join(directory_path, filename)
+            
+            # Remove specified columns from the CSV file
+            remove_columns_from_csv(csv_path, columns_to_remove)
+            
             df = pd.read_csv(csv_path)
 
             for _, row in df.iterrows():
-                context_entry = f"""
-                Full_Name: {row.get('Full_Name', 'Not provided')}
-                Years_of_Experience: {row.get('Years_of_Experience', 'Not provided')}
-                Key_Skills: {row.get('Key_Skills', 'Not provided')}
-                Experience_Details: {row.get('Experience_Details', 'Not provided')}
-                College_Tier: {row.get('College_Tier', 'Not provided')}
-                """
+                # Construct context entry by including all columns dynamically
+                context_entry = "\n".join([f"{col}: {row[col]}" for col in df.columns if pd.notnull(row[col])])
                 all_context.append(context_entry)
 
     if not all_context:
@@ -105,7 +132,7 @@ def vector_embedding(directory_path):
     if not all_texts:
         raise ValueError("No text extracted from CSV documents.")
     
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=300000, chunk_overlap=100)
     final_documents = text_splitter.create_documents(all_texts)
     if not final_documents:
         raise ValueError("No document chunks created.")
@@ -144,7 +171,6 @@ def process():
         response = retrieval_chain.invoke({'context': context, 'input': document_text})
         elapsed_time = time.process_time() - start
 
-        # Ensure that response content is serializable
         response_data = {
             "response": response.get('answer', ''),
             "response_time": elapsed_time,
