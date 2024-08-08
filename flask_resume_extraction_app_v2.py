@@ -12,11 +12,11 @@ class ResumeProcessor:
     def __init__(self, groq_api_key):
         self.groq_api_key = groq_api_key
         self.allowed_extensions = {'pdf', 'docx', 'zip'}
-        self.remote_folder = '/home/azureuser/resume_analysis/resume'  # Fixed remote folder
-        self.hostname = '13.71.112.51'  # Fixed VM IP address
-        self.port = 22  # Default SSH port
-        self.username = 'azureuser'  # Fixed SSH username
-        self.password = 'Shantabai@12'  # Fixed SSH password
+        self.remote_folder = '/home/azureuser/resume_analysis/resume'
+        self.hostname = '13.71.112.51'
+        self.port = 22
+        self.username = 'azureuser'
+        self.password = 'Shantabai@12'
 
     def extract_text_from_docx(self, docx_file):
         try:
@@ -94,15 +94,15 @@ class ResumeProcessor:
             11. Profile_Summary
             12. Project_Summary
             13. Certifications
-
+            
             Resume text:
             {text}
 
             Only provide the JSON without any explanatory text or notes. If any information is not available, include `null` for that field or possible to calculate it.
             Don't provide any notes or explanation on your assumptions.
-            Calculate Year_of_Experience using the total duration of work experience if it's not directly available.
+            Calculate Year_of_Experience using total duration of work experience. if it's not directly available
             Industry_sector is not directly mentioned in resume, use your knowledge and decide it.
-            Profile_Summary must be based on overall work related experience and it should not be more than one paragraph.
+            Profile_Summary must be based on overall work related experience and it should not be more than one paragraph
             '''
 
             chat_completion = client.chat.completions.create(
@@ -117,17 +117,17 @@ class ResumeProcessor:
             )
 
             response_content = chat_completion.choices[0].message.content
-
+            
             # Debugging step: Print the raw response content
             print(f"Raw API response for file '{filename}': {response_content}")
-
+            
             try:
                 data = json.loads(response_content.strip())
                 extracted_data.append(data)
             except json.JSONDecodeError as e:
                 print(f"Failed to parse JSON: {e}")
                 print(f"Response content: {response_content}")
-
+        
         return extracted_data
 
     def save_to_json(self, data, json_path):
@@ -165,34 +165,29 @@ class ResumeProcessor:
             ssh.close()
 
 app = Flask(__name__)
-app.config['GROQ_API_KEY'] = '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'
+app.config['GROQ_API_KEY'] = 'your_groq_api_key'
 processor = ResumeProcessor(app.config['GROQ_API_KEY'])
 
 @app.route('/process_directory', methods=['POST'])
 def process_directory():
     data = request.get_json()
-    directory_path = data.get('directory_path')
-
-    if not directory_path or not os.path.isdir(directory_path):
-        return jsonify({"error": "Invalid directory path"}), 400
-
-    try:
-        processed_data = processor.process_resumes(directory_path)
-        return jsonify(processed_data), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/upload_folder', methods=['POST'])
-def upload_folder():
-    data = request.get_json()
     local_folder = data.get('local_folder')
 
-    if not os.path.isdir(local_folder):
-        return jsonify({"error": "Invalid local folder path"}), 400
+    # Ensure local folder path is provided
+    if not local_folder:
+        return jsonify({"error": "No local folder path provided"}), 400
 
     try:
+        # Define the fixed VM folder for processing
+        vm_resume_folder = '/home/yourusername/resume_analysis/resume'
+
+        # Upload the folder from local to VM
         processor.scp_upload_folder(local_folder)
-        return jsonify({"message": "Files uploaded successfully"}), 200
+
+        # Process resumes from the VM folder
+        processed_data = processor.process_resumes(vm_resume_folder)
+
+        return jsonify(processed_data), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
